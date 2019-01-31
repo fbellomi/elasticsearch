@@ -1,0 +1,107 @@
+/*
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.elasticsearch.search.aggregations.metrics.strictcardinality;
+
+import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.xcontent.ObjectParser;
+import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregatorFactories.Builder;
+import org.elasticsearch.search.aggregations.AggregatorFactory;
+import org.elasticsearch.search.aggregations.support.*;
+import org.elasticsearch.search.internal.SearchContext;
+
+import java.io.IOException;
+import java.util.Map;
+
+public final class StrictCardinalityAggregationBuilder
+    extends ValuesSourceAggregationBuilder.LeafOnly<ValuesSource, StrictCardinalityAggregationBuilder> {
+
+    public static final String NAME = "strict_cardinality";
+
+    private static final ObjectParser<StrictCardinalityAggregationBuilder, Void> PARSER;
+    static {
+        PARSER = new ObjectParser<>(StrictCardinalityAggregationBuilder.NAME);
+        ValuesSourceParserHelper.declareAnyFields(PARSER, true, false);
+    }
+
+    public static AggregationBuilder parse(String aggregationName, XContentParser parser) throws IOException {
+        return PARSER.parse(parser, new StrictCardinalityAggregationBuilder(aggregationName, null), null);
+    }
+
+    public StrictCardinalityAggregationBuilder(String name, ValueType targetValueType) {
+        super(name, ValuesSourceType.ANY, targetValueType);
+    }
+
+    private StrictCardinalityAggregationBuilder(StrictCardinalityAggregationBuilder clone, Builder factoriesBuilder, Map<String, Object> metaData) {
+        super(clone, factoriesBuilder, metaData);
+    }
+
+    /**
+     * Read from a stream.
+     */
+    public StrictCardinalityAggregationBuilder(StreamInput in) throws IOException {
+        super(in, ValuesSourceType.ANY);
+    }
+
+    @Override
+    protected AggregationBuilder shallowCopy(Builder factoriesBuilder, Map<String, Object> metaData) {
+        return new StrictCardinalityAggregationBuilder(this, factoriesBuilder, metaData);
+    }
+
+    @Override
+    protected void innerWriteTo(StreamOutput out) {
+        // no configuration parameters
+    }
+
+    @Override
+    protected boolean serializeTargetValueType() {
+        return true;
+    }
+
+    @Override
+    protected StrictCardinalityAggregatorFactory innerBuild(SearchContext context, ValuesSourceConfig<ValuesSource> config,
+                                                            AggregatorFactory<?> parent, Builder subFactoriesBuilder) throws IOException {
+        return new StrictCardinalityAggregatorFactory(name, config, context, parent, subFactoriesBuilder, metaData);
+    }
+
+    @Override
+    public XContentBuilder doXContentBody(XContentBuilder builder, Params params) {
+        // no configuration parameters
+        return builder;
+    }
+
+    @Override
+    protected int innerHashCode() {
+        return 123;
+    }  // no internal state
+
+    @Override
+    protected boolean innerEquals(Object _obj) {
+        return true; // no internal state
+    }
+
+    @Override
+    public String getType() {
+        return NAME;
+    }
+}
