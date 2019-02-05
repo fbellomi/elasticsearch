@@ -16,7 +16,7 @@ import java.util.Objects;
 
 public final class CountCollector implements Releasable
 {
-    private ObjectArray<ObjectScatterSet<BytesRef>> buckets;
+    private ObjectArray<BytesRefSet> buckets;
 
     private final BigArrays bigArrays;
 
@@ -26,7 +26,7 @@ public final class CountCollector implements Releasable
         buckets = arrays.newObjectArray(1);
     }
 
-    private ObjectScatterSet<BytesRef> safeGet(final long bucket)
+    private BytesRefSet safeGet(final long bucket)
     {
         if (bucket >= buckets.size())
             return null;
@@ -49,47 +49,51 @@ public final class CountCollector implements Releasable
         return bs == null ? 0 : bs.size();
     }
 
-    ObjectScatterSet<BytesRef> getCreate(final long bucket)
+    class BytesRefSet extends ObjectScatterSet<BytesRef>
     {
-        ObjectScatterSet<BytesRef> r = safeGet(bucket);
+        BytesRefSet(final int expectedElements)
+        {
+            super(expectedElements);
+        }
+
+        void addClone(final BytesRef key)
+        {
+            if (((key) == null)) {
+              hasEmptyKey = true;
+            } else {
+              final Object [] keys = this.keys;
+              final int mask = this.mask;
+              int slot = hashKey(key) & mask;
+
+              Object existing;
+              while (!((existing = keys[slot]) == null)) {
+                if (this.equals(existing,  key)) {
+                  return;
+                }
+                slot = (slot + 1) & mask;
+              }
+
+              final BytesRef nk = cloneBytesRef(key);   // add a clone
+              if (assigned == resizeAt) {
+                allocateThenInsertThenRehash(slot, nk);
+              } else {
+                keys[slot] = nk;
+              }
+
+              assigned++;
+            }
+        }
+
+    }
+
+    BytesRefSet getCreate(final long bucket)
+    {
+        BytesRefSet r = safeGet(bucket);
         if (r == null)
         {
             buckets = bigArrays.grow(buckets, bucket+1);
             final int size = (bucket < 4) ? 16384 : 1024;
-            r = new ObjectScatterSet<BytesRef>(size)
-            {
-                @Override
-                public boolean add(final BytesRef key)
-                {
-                    if (((key) == null)) {
-                      boolean added = !hasEmptyKey;
-                      hasEmptyKey = true;
-                      return added;
-                    } else {
-                      final Object [] keys = this.keys;
-                      final int mask = this.mask;
-                      int slot = hashKey(key) & mask;
-
-                      Object existing;
-                      while (!((existing = keys[slot]) == null)) {
-                        if (this.equals(existing,  key)) {
-                          return false;
-                        }
-                        slot = (slot + 1) & mask;
-                      }
-
-                      final BytesRef nk = cloneBytesRef(key);   // add a clone
-                      if (assigned == resizeAt) {
-                        allocateThenInsertThenRehash(slot, nk);
-                      } else {
-                        keys[slot] = nk;
-                      }
-
-                      assigned++;
-                      return true;
-                    }
-                }
-            };
+            r = new BytesRefSet(size);
             buckets.set(bucket, r);
         }
         return r;

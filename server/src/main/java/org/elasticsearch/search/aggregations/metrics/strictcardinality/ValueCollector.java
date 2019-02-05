@@ -1,7 +1,5 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
-import com.carrotsearch.hppc.ObjectScatterSet;
-import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
@@ -31,9 +29,9 @@ public final class ValueCollector   extends LeafBucketCollector implements Relea
     {
         if (values.advanceExact(doc)) {
             final int valueCount = values.docValueCount();
-            final ObjectScatterSet<BytesRef> z = counts.getCreate(bucket);
+            final CountCollector.BytesRefSet z = counts.getCreate(bucket);
             for (int i = 0; i < valueCount; i++) {
-                z.add(values.nextValue());
+                z.addClone(values.nextValue());
             }
         }
     }
