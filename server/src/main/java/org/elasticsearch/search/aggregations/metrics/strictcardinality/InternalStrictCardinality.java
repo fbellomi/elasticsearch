@@ -21,6 +21,7 @@ package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.InternalAggregation;
@@ -87,7 +88,7 @@ public final class InternalStrictCardinality extends InternalNumericMetricsAggre
             final InternalStrictCardinality cardinality = (InternalStrictCardinality) aggregation;
             if (cardinality.counts != null) {
                 if (reduced == null) {
-                    reduced = new InternalStrictCardinality(name, new CountCollector(), pipelineAggregators(), getMetaData());
+                    reduced = new InternalStrictCardinality(name, new CountCollector(BigArrays.NON_RECYCLING_INSTANCE), pipelineAggregators(), getMetaData());
                 }
                 reduced.merge(cardinality);
             }

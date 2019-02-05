@@ -40,7 +40,7 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
 
     private final ValuesSource valuesSource;
 
-    private final CountCollector counts = new CountCollector();
+    private final CountCollector counts;
 
     private ValueCollector collector;
 
@@ -48,6 +48,7 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
                                 SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
         this.valuesSource = valuesSource;
+        counts = new CountCollector(context.bigArrays());
     }
 
     @Override
@@ -65,10 +66,9 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
         return collector;
     }
 
-    private void postCollectLastCollector() {     // todo ??
+    private void postCollectLastCollector() {
         if (collector != null) {
             try {
-                //collector.postCollect();
                 collector.close();
             } finally {
                 collector = null;
@@ -103,6 +103,7 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
 
     @Override
     protected void doClose() {
+        counts.close();
         if (collector != null)
             collector.close();
     }

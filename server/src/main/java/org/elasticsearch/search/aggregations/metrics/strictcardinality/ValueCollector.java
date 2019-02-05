@@ -32,12 +32,8 @@ public final class ValueCollector   extends LeafBucketCollector implements Relea
         if (values.advanceExact(doc)) {
             final int valueCount = values.docValueCount();
             final ObjectScatterSet<BytesRef> z = counts.getCreate(bucket);
-            for (int i = 0; i < valueCount; ++i) {
-                {
-                    final BytesRef v = values.nextValue();
-                    if (!z.contains(v))
-                        z.add(BytesRef.deepCopyOf(v));
-                }
+            for (int i = 0; i < valueCount; i++) {
+                z.add(values.nextValue());
             }
         }
     }
