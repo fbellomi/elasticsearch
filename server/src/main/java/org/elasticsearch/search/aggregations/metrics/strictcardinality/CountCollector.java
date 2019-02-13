@@ -1,8 +1,9 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
-import com.carrotsearch.hppc.ObjectHashSet;
+import com.carrotsearch.hppc.IntScatterSet;
 import com.carrotsearch.hppc.ObjectScatterSet;
 import com.carrotsearch.hppc.cursors.ObjectCursor;
+import com.carrotsearch.hppc.procedures.IntProcedure;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -16,9 +17,11 @@ import java.util.Objects;
 
 public final class CountCollector implements Releasable
 {
-    private ObjectArray<BytesRefSet> buckets;
+    private ObjectArray buckets;
 
     private final BigArrays bigArrays;
+
+    private BytesRefSet interner;
 
     CountCollector(final BigArrays arrays)
     {
@@ -26,7 +29,14 @@ public final class CountCollector implements Releasable
         buckets = arrays.newObjectArray(1);
     }
 
-    private BytesRefSet safeGet(final long bucket)
+    BytesRefSet getInterner()
+    {
+        if (interner == null)
+            interner = new BytesRefSet();
+        return interner;
+    }
+
+    private Object safeGet(final long bucket)
     {
         if (bucket >= buckets.size())
             return null;
@@ -36,30 +46,48 @@ public final class CountCollector implements Releasable
     static CountCollector readSingletonFrom(final StreamInput in) throws IOException
     {
         final CountCollector c = new CountCollector(BigArrays.NON_RECYCLING_INSTANCE);
-        final ObjectScatterSet<BytesRef> bs = c.getCreate(0);
-        final int count = in.readInt();
-        for (int i = 0; i < count; i++)
-            bs.add(c.readBytesRef(in));
+        final boolean numbers = in.readBoolean();
+        if (numbers)
+        {
+            final int count = in.readInt();
+            if (count > 0)
+            {
+                final IntScatterSet bs = c.getCreateInt(0);
+                for (int i = 0; i < count; i++)
+                    bs.add(in.readInt());
+            }
+        }
+        else
+        {
+            final int count = in.readInt();
+            if (count > 0)
+            {
+                final ObjectScatterSet<BytesRef> bs = c.getCreate(0);
+                for (int i = 0; i < count; i++)
+                    bs.add(c.readBytesRef(in));
+            }
+        }
         return c;
     }
 
     int cardinality(final long bucket)
     {
-        final ObjectHashSet<BytesRef> bs = safeGet(bucket);
-        return bs == null ? 0 : bs.size();
+        final Object bs = safeGet(bucket);
+        if (bs == null)
+            return 0;
+        else if (bs instanceof BytesRefSet)
+            return ((BytesRefSet) bs).size();
+        else // if (bs instanceof IntScatterSet)
+            return ((IntScatterSet)bs).size();
     }
 
     class BytesRefSet extends ObjectScatterSet<BytesRef>
     {
-        BytesRefSet(final int expectedElements)
-        {
-            super(expectedElements);
-        }
-
-        void addClone(final BytesRef key)
+        BytesRef addClone(final BytesRef key)
         {
             if (((key) == null)) {
               hasEmptyKey = true;
+              return null;
             } else {
               final Object [] keys = this.keys;
               final int mask = this.mask;
@@ -68,7 +96,7 @@ public final class CountCollector implements Releasable
               Object existing;
               while (!((existing = keys[slot]) == null)) {
                 if (this.equals(existing,  key)) {
-                  return;
+                  return (BytesRef) existing;
                 }
                 slot = (slot + 1) & mask;
               }
@@ -81,19 +109,33 @@ public final class CountCollector implements Releasable
               }
 
               assigned++;
+              return nk;
             }
         }
 
     }
 
+    @SuppressWarnings("unchecked")
     BytesRefSet getCreate(final long bucket)
     {
-        BytesRefSet r = safeGet(bucket);
+        BytesRefSet r = (BytesRefSet) safeGet(bucket);
         if (r == null)
         {
             buckets = bigArrays.grow(buckets, bucket+1);
-            final int size = (bucket < 4) ? 16384 : 1024;
-            r = new BytesRefSet(size);
+            r = new BytesRefSet();
+            buckets.set(bucket, r);
+        }
+        return r;
+    }
+
+    @SuppressWarnings("unchecked")
+    IntScatterSet getCreateInt(final long bucket)
+    {
+        IntScatterSet r = (IntScatterSet) safeGet(bucket);
+        if (r == null)
+        {
+            buckets = bigArrays.grow(buckets, bucket+1);
+            r = new IntScatterSet();
             buckets.set(bucket, r);
         }
         return r;
@@ -146,13 +188,16 @@ public final class CountCollector implements Releasable
 
     boolean isEmptyBucket(final long bucket)
     {
-        final ObjectHashSet<BytesRef> br = safeGet(bucket);
-        return br == null || br.isEmpty();
+        final Object br = safeGet(bucket);
+        return br == null ||
+            (br instanceof BytesRefSet && ((BytesRefSet) br).isEmpty()) ||
+            (br instanceof IntScatterSet && ((IntScatterSet) br).isEmpty());
     }
 
     CountCollector singleton(final long bucket)
     {
         final CountCollector count = new CountCollector(BigArrays.NON_RECYCLING_INSTANCE);
+        //noinspection unchecked
         count.buckets.set(0, buckets.get(bucket));
         return count;
     }
@@ -160,31 +205,77 @@ public final class CountCollector implements Releasable
     @SuppressWarnings("SameParameterValue")
     void writeSingletonTo(final long bucket, final StreamOutput out) throws IOException
     {
-        final ObjectScatterSet<BytesRef> bs = getCreate(bucket);
-        out.writeInt(bs.size());
-        for (final ObjectCursor<BytesRef> i : bs)
-            out.writeBytesRef(i.value);
+        final Object z = buckets.get(bucket);
+        if (z instanceof IntScatterSet)
+        {
+            out.writeBoolean(true);
+            final IntScatterSet bs = (IntScatterSet) z;
+            out.writeInt(bs.size());
+            try
+            {
+                bs.forEach((IntProcedure) value -> {
+                    try
+                    {
+                        out.writeInt(value);
+                    }
+                    catch (final IOException e)
+                    {
+                        throw new InternalError(e);
+                    }
+                });
+            }
+            catch (InternalError e)
+            {
+                throw (IOException) Objects.requireNonNull(e.getCause());
+            }
+        }
+        else
+        {
+            out.writeBoolean(false);
+            if (z == null)
+                out.writeInt(0);
+            else
+            {
+                //noinspection unchecked
+                final ObjectScatterSet<BytesRef> bs = (ObjectScatterSet<BytesRef>) z;
+                out.writeInt(bs.size());
+                for (final ObjectCursor<BytesRef> i : bs)
+                    out.writeBytesRef(i.value);
+            }
+        }
     }
 
     @SuppressWarnings("SameParameterValue")
     int hashCode(final long bucket)
     {
-        final ObjectHashSet<BytesRef> bs = safeGet(bucket);
+        final Object bs = safeGet(bucket);
         return bs == null ? 0 : bs.hashCode();
     }
 
     public boolean equals(final long bucket, final CountCollector counts)
     {
-        final ObjectHashSet<BytesRef> bs = safeGet(bucket);
-        final ObjectHashSet<BytesRef> bs2 = counts.safeGet(bucket);
+        final Object bs = safeGet(bucket);
+        final Object bs2 = counts.safeGet(bucket);
         return Objects.equals(bs, bs2);
     }
 
     public void merge(final long bucket, final CountCollector other, final long otherBucket)
     {
-        final ObjectHashSet<BytesRef> bs = getCreate(bucket);
-        final ObjectHashSet<BytesRef> bs2 = other.safeGet(otherBucket);
-        if (bs2 != null)
-            bs.addAll(bs2);
+        final Object b = safeGet(bucket);
+        final Object b2 = other.safeGet(otherBucket);
+        if (b == null)
+        {
+            if (b2 instanceof BytesRefSet)
+                getCreate(bucket).addAll((BytesRefSet) b2);
+            else if (b2 instanceof IntScatterSet)
+                getCreateInt(bucket).addAll((IntScatterSet) b2);
+        }
+        else if (b2 != null)
+        {
+            if (b instanceof BytesRefSet)
+                ((BytesRefSet) b).addAll((BytesRefSet) b2);
+            else if (b instanceof IntScatterSet)
+                ((IntScatterSet) b).addAll((IntScatterSet) b2);
+        }
     }
 }

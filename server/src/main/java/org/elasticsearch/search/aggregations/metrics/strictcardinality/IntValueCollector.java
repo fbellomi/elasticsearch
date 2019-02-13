@@ -1,17 +1,18 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
-import org.elasticsearch.index.fielddata.SortedBinaryDocValues;
+import com.carrotsearch.hppc.IntScatterSet;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
 
 import java.io.IOException;
 
-public final class ValueCollector   extends LeafBucketCollector
+public final class IntValueCollector extends LeafBucketCollector
 {
-    private final SortedBinaryDocValues values;
+    private final SortedNumericDocValues values;
 
     private final CountCollector counts;
 
-    ValueCollector(final SortedBinaryDocValues values, final CountCollector counts)
+    IntValueCollector(final SortedNumericDocValues values, final CountCollector counts)
     {
         this.values = values;
         this.counts = counts;
@@ -22,10 +23,9 @@ public final class ValueCollector   extends LeafBucketCollector
     {
         if (values.advanceExact(doc)) {
             final int valueCount = values.docValueCount();
-            final CountCollector.BytesRefSet z = counts.getCreate(bucket);
-            final CountCollector.BytesRefSet interner = counts.getInterner();
+            final IntScatterSet z = counts.getCreateInt(bucket);
             for (int i = 0; i < valueCount; i++) {
-                z.add(interner.addClone(values.nextValue()));
+                z.add((int) values.nextValue());
             }
         }
     }

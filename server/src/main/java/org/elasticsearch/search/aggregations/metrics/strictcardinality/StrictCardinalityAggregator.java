@@ -20,7 +20,6 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
 import org.apache.lucene.index.LeafReaderContext;
-import org.elasticsearch.index.fielddata.SortedBinaryDocValues;
 import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
@@ -42,13 +41,14 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
 
     private final CountCollector counts;
 
-    private ValueCollector collector;
-
     StrictCardinalityAggregator(String name, ValuesSource valuesSource,
                                 SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
         this.valuesSource = valuesSource;
-        counts = new CountCollector(context.bigArrays());
+        if (valuesSource != null)
+            counts = new CountCollector(context.bigArrays());
+        else
+            counts = null;
     }
 
     @Override
@@ -59,26 +59,12 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
     @Override
     public LeafBucketCollector getLeafCollector(LeafReaderContext ctx,
             final LeafBucketCollector sub) throws IOException {
-        postCollectLastCollector();
-
-        final SortedBinaryDocValues values = valuesSource == null ? null : valuesSource.bytesValues(ctx);
-        collector = new ValueCollector(values, counts);
-        return collector;
-    }
-
-    private void postCollectLastCollector() {
-        if (collector != null) {
-            try {
-                collector.close();
-            } finally {
-                collector = null;
-            }
-        }
-    }
-
-    @Override
-    protected void doPostCollection()  {
-        postCollectLastCollector();
+        if (valuesSource == null)
+            return LeafBucketCollector.NO_OP_COLLECTOR;
+        else if (valuesSource instanceof ValuesSource.Numeric)
+            return new IntValueCollector(((ValuesSource.Numeric) valuesSource).longValues(ctx), counts);
+        else
+            return new ValueCollector(valuesSource.bytesValues(ctx), counts);
     }
 
     @Override
@@ -88,7 +74,7 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
 
     @Override
     public InternalAggregation buildAggregation(long owningBucketOrdinal) {
-        if (counts.isEmptyBucket(owningBucketOrdinal)) {
+        if (counts == null || counts.isEmptyBucket(owningBucketOrdinal)) {
             return buildEmptyAggregation();
         }
         // We need to build a copy because the returned Aggregation needs remain usable after
@@ -103,8 +89,7 @@ public class StrictCardinalityAggregator extends NumericMetricsAggregator.Single
 
     @Override
     protected void doClose() {
-        counts.close();
-        if (collector != null)
-            collector.close();
+        if (counts != null)
+            counts.close();
     }
 }
