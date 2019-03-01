@@ -1,6 +1,6 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
-import com.carrotsearch.hppc.IntScatterSet;
+import com.carrotsearch.hppc.LongScatterSet;
 import org.apache.lucene.index.SortedNumericDocValues;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
 
@@ -23,9 +23,9 @@ public final class IntValueCollector extends LeafBucketCollector
     {
         if (values.advanceExact(doc)) {
             final int valueCount = values.docValueCount();
-            final IntScatterSet z = counts.getCreateInt(bucket);
+            final LongScatterSet z = counts.getCreateInt(bucket);
             for (int i = 0; i < valueCount; i++) {
-                z.add((int) values.nextValue());
+                z.add(values.nextValue());
             }
         }
     }

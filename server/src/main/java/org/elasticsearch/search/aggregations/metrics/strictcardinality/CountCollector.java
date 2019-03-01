@@ -1,9 +1,9 @@
 package org.elasticsearch.search.aggregations.metrics.strictcardinality;
 
-import com.carrotsearch.hppc.IntScatterSet;
+import com.carrotsearch.hppc.LongScatterSet;
 import com.carrotsearch.hppc.ObjectScatterSet;
 import com.carrotsearch.hppc.cursors.ObjectCursor;
-import com.carrotsearch.hppc.procedures.IntProcedure;
+import com.carrotsearch.hppc.procedures.LongProcedure;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -52,9 +52,9 @@ public final class CountCollector implements Releasable
             final int count = in.readInt();
             if (count > 0)
             {
-                final IntScatterSet bs = c.getCreateInt(0);
+                final LongScatterSet bs = c.getCreateInt(0);
                 for (int i = 0; i < count; i++)
-                    bs.add(in.readInt());
+                    bs.add(in.readLong());
             }
         }
         else
@@ -77,8 +77,8 @@ public final class CountCollector implements Releasable
             return 0;
         else if (bs instanceof BytesRefSet)
             return ((BytesRefSet) bs).size();
-        else // if (bs instanceof IntScatterSet)
-            return ((IntScatterSet)bs).size();
+        else // if (bs instanceof LongScatterSet)
+            return ((LongScatterSet)bs).size();
     }
 
     class BytesRefSet extends ObjectScatterSet<BytesRef>
@@ -129,13 +129,13 @@ public final class CountCollector implements Releasable
     }
 
     @SuppressWarnings("unchecked")
-    IntScatterSet getCreateInt(final long bucket)
+    LongScatterSet getCreateInt(final long bucket)
     {
-        IntScatterSet r = (IntScatterSet) safeGet(bucket);
+        LongScatterSet r = (LongScatterSet) safeGet(bucket);
         if (r == null)
         {
             buckets = bigArrays.grow(buckets, bucket+1);
-            r = new IntScatterSet();
+            r = new LongScatterSet();
             buckets.set(bucket, r);
         }
         return r;
@@ -191,7 +191,7 @@ public final class CountCollector implements Releasable
         final Object br = safeGet(bucket);
         return br == null ||
             (br instanceof BytesRefSet && ((BytesRefSet) br).isEmpty()) ||
-            (br instanceof IntScatterSet && ((IntScatterSet) br).isEmpty());
+            (br instanceof LongScatterSet && ((LongScatterSet) br).isEmpty());
     }
 
     CountCollector singleton(final long bucket)
@@ -206,17 +206,17 @@ public final class CountCollector implements Releasable
     void writeSingletonTo(final long bucket, final StreamOutput out) throws IOException
     {
         final Object z = buckets.get(bucket);
-        if (z instanceof IntScatterSet)
+        if (z instanceof LongScatterSet)
         {
             out.writeBoolean(true);
-            final IntScatterSet bs = (IntScatterSet) z;
+            final LongScatterSet bs = (LongScatterSet) z;
             out.writeInt(bs.size());
             try
             {
-                bs.forEach((IntProcedure) value -> {
+                bs.forEach((LongProcedure) value -> {
                     try
                     {
-                        out.writeInt(value);
+                        out.writeLong(value);
                     }
                     catch (final IOException e)
                     {
@@ -267,15 +267,15 @@ public final class CountCollector implements Releasable
         {
             if (b2 instanceof BytesRefSet)
                 getCreate(bucket).addAll((BytesRefSet) b2);
-            else if (b2 instanceof IntScatterSet)
-                getCreateInt(bucket).addAll((IntScatterSet) b2);
+            else if (b2 instanceof LongScatterSet)
+                getCreateInt(bucket).addAll((LongScatterSet) b2);
         }
         else if (b2 != null)
         {
             if (b instanceof BytesRefSet)
                 ((BytesRefSet) b).addAll((BytesRefSet) b2);
-            else if (b instanceof IntScatterSet)
-                ((IntScatterSet) b).addAll((IntScatterSet) b2);
+            else if (b instanceof LongScatterSet)
+                ((LongScatterSet) b).addAll((LongScatterSet) b2);
         }
     }
 }
